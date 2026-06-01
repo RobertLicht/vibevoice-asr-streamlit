@@ -1,0 +1,82 @@
+# VibeVoice ASR
+
+> Microsoft's open-source frontier Automatic Speech Recognition model for long-form structured transcription — producing speaker diarization (Who), timestamps (When), and content (What) from up to 60 minutes of audio in a single pass, with support for 50+ languages, native code-switching, and custom hotwords. This local Linux setup provides CLI, script, and Streamlit web UI interfaces.
+
+Important notes:
+
+- This is a **local workstation setup**, not an API or web service — models run on your machine
+- Requires Linux (Debian/Ubuntu), Python 3.12+, and either NVIDIA CUDA or AMD ROCm GPU (CPU fallback available with higher latency)
+- `VibeVoiceCore` uses a class-level singleton for the model and processor — loaded once, shared across all instances via a reference counter; memory is freed on `unload()` when no live instances remain
+- 3-tier local-first loading strategy: **(1)** load from local cache if present → **(2)** download to local cache then load → **(3)** stream directly from Hugging Face (fallback)
+
+## Quick Start
+
+- [setup.sh](setup.sh): Auto-detecting one-shot environment setup — detects NVIDIA CUDA / AMD ROCm / CPU, creates virtual environment, installs matching PyTorch wheel and all dependencies
+- [start.sh](start.sh): Pre-flight checks + Streamlit web UI launcher (handles venv activation automatically)
+- [vibevoice.py CLI](vibevoice.py): Batch transcription via command line — `python vibevoice.py <input> <output_dir> [--hotwords "..."]` for single files or entire directories (recursive by default)
+- [transcribe.py](transcribe.py): Single-file demo script — edit `audio_path` to transcribe one audio file directly
+
+## Core API
+
+The `VibeVoiceCore` class (in [vibevoice.py](vibevoice.py)) provides the core transcription pipeline:
+
+```python
+from vibevoice import VibeVoiceCore
+
+core = VibeVoiceCore(model_id="microsoft/VibeVoice-ASR-HF")
+
+# Transcribe a single file → structured JSON dict
+result = core.transcribe("audio/meeting.wav", hotwords="custom term")
+
+# Batch transcribe entire directories
+results = core.transcribe_batch(core.discover_audio_files("./audio/"))
+
+# Unload model to free GPU/CPU memory
+core.unload()
+```
+
+Key methods:
+
+- `transcribe(audio_path, hotwords=None)` — Transcribes a single audio file and returns a dict with `source_file` and `transcription` (list of dicts with Speaker, Start, End, Content)
+- `discover_audio_files(path, recursive=True)` — Returns paths to all files with extensions `.wav`, `.mp3`, `.flac`, `.ogg`, `.m4a`, `.aac`, `.wma`
+- `transcribe_batch(file_paths, hotwords=None)` — Transcribes a list of audio file paths and saves JSON output for each
+
+## Configuration
+
+Key configurable options (via CLI flags or `VibeVoiceCore.__init__`):
+
+| Setting | Values / Description |
+|---|---|
+| **Device** | `auto` (default), `cuda`, `cpu` — auto detects GPU; falls back to CPU |
+| **Acoustic Chunk Size** | Must be multiple of 3200; default 1,440,000 (60 s @ 24 kHz); lower = less VRAM. Auto-scaled for audio < 10 minutes |
+| **Resampling Mode** | `keep_original`, `down_to_24k`, `down_to_32k`, `down_to_16k` — downsamples only if source sample rate exceeds the target (model optimized for 24 kHz) |
+| **Hotwords** | Free-form string passed as prompt to guide transcription — useful for domain-specific terms, names, jargon |
+| **Local Model Dir** | Path to cache models locally. Model is loaded from `{dir}/{model_id}` first; downloaded there only if not found. Enables offline use and fast repeated transcriptions |
+
+## Output Format
+
+Each transcribed file produces a JSON with the following structure:
+
+```json
+{
+  "source_file": "/absolute/path/to/audio.wav",
+  "transcription": [
+    {"Speaker": "speaker_1", "Start": 0.0,   "End": 3.5,  "Content": "Hello."},
+    {"Speaker": "speaker_2", "Start": 3.5,   "End": 7.2,  "Content": "Hi there."}
+  ]
+}
+```
+
+## Testing
+
+- [run_tests.sh](run_tests.sh): Test runner — activates venv and executes `pytest -v`
+- [tests/](tests/): Unit tests with shared fixtures (mocked model, synthetic audio). Key modules: `test_cli.py`, `test_core_init.py`, `test_discover_audio_files.py`, `test_resample.py`, `test_select_chunk_size.py`, `test_webui_helpers.py`
+
+## References
+
+- [GitHub — microsoft/VibeVoice](https://github.com/microsoft/VibeVoice): Upstream open-source repository
+- [Hugging Face — VibeVoice-ASR-HF](https://huggingface.co/microsoft/VibeVoice-ASR-HF): Hugging Face Transformers-compatible model card
+- [VibeVoice-ASR Demo](https://huggingface.co/spaces/microsoft/VibeVoice-ASR-Demo): Interactive online demo
+- [Technical Report](https://github.com/microsoft/VibeVoice/tree/main/docs): Architecture and benchmark details
+- [Finetuning Guide](https://github.com/microsoft/VibeVoice/tree/main/finetune): Instructions for fine-tuning VibeVoice-ASR on custom data
+- [vLLM Deployment](https://github.com/microsoft/VibeVoice/blob/main/docs/vibevoice-vllm-asr.md): Faster inference via vLLM
