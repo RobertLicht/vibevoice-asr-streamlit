@@ -2,6 +2,12 @@
 
 Local setup for [Microsoft VibeVoice-ASR](https://github.com/microsoft/VibeVoice), a unified speech-to-text model that handles up to 60 minutes of long-form audio in a single pass, producing structured transcriptions with speaker diarization (Who), timestamps (When), and content (What).
 
+---
+
+![VibeVoice-ASR-Streamlit](./images/VibeVoice-ASR-Streamlit-example01.png "Usage example of the VibeVoice-ASR-Streamlit application")
+
+---
+
 ## Overview
 
 | Feature | Detail |
